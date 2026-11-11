@@ -44,4 +44,3 @@ jobs:
           name: Rio-Dashboard-Instalador
           path: saida/Rio-Dashboard-Instalador.exe
           if-no-files-found: error
-
