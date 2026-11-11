@@ -1,0 +1,2 @@
+Coloque aqui os arquivos AAAAMM.json gerados pelo Rio Dashboard (ex.: 202609.json).
+O site descobre sozinho quais meses existem nesta pasta.

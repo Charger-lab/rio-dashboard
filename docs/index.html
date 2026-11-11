@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rio Dashboard – Boletim do Trabalho</title>
+<style>
+  :root { --navy:#14365D; --saldo:#0B4A7A; --cyan:#00B5F0; --adm:#00C26A; --des:#FF5A5F; --fundo:#f4f7fb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--fundo); font-family:'Segoe UI',Arial,sans-serif; color:#222; }
+  header { background:linear-gradient(90deg,var(--navy),var(--saldo)); color:#fff; padding:18px 26px; border-bottom:4px solid var(--cyan); }
+  header .titulo { font-size:28px; font-weight:800; letter-spacing:.6px; text-transform:uppercase; }
+  header .sub { font-size:15px; opacity:.9; margin-top:2px; }
+  .barra-topo { display:flex; flex-wrap:wrap; gap:14px; align-items:flex-end; padding:16px 18px 0; max-width:1300px; margin:0 auto; }
+  .barra-topo label { display:block; font-size:12px; font-weight:600; margin-bottom:3px; color:var(--navy); }
+  select { padding:8px 10px; font-size:15px; border:1px solid #c5cedb; border-radius:6px; background:#fff; min-width:120px; }
+  button.btn { background:var(--navy); color:#fff; border:0; border-radius:6px; padding:9px 16px; font-size:14px; font-weight:700; cursor:pointer; }
+  button.btn:hover { background:var(--saldo); }
+  .esp { flex:1; }
+  main { max-width:1300px; margin:0 auto; padding:14px 18px 40px; }
+  nav.abas { display:flex; flex-wrap:wrap; gap:4px; border-bottom:2px solid #d5dbe5; margin-bottom:14px; }
+  nav.abas button { background:#e9eef6; border:0; padding:10px 16px; font-size:14px; cursor:pointer; border-radius:6px 6px 0 0; color:#33465c; }
+  nav.abas button.ativa { background:#fff; color:var(--navy); font-weight:700; box-shadow:0 -2px 0 var(--cyan) inset; }
+  section.aba { display:none; } section.aba.ativa { display:block; }
+  .kpis { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+  .kpi { flex:1 1 170px; background:#fff; border-left:6px solid var(--cyan); border-radius:6px; padding:12px 14px; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  .kpi .t { font-size:12px; text-transform:uppercase; color:#5a6b80; letter-spacing:.4px; }
+  .kpi .v { font-size:26px; font-weight:700; color:var(--navy); }
+  .kpi.pos { border-left-color:var(--adm); } .kpi.neg { border-left-color:var(--des); }
+  .bloco { background:#fff; border-radius:8px; padding:14px 16px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.10); }
+  .bloco h4 { color:var(--navy); margin:0 0 8px; }
+  .grafico { width:100%; }
+  table.tab { width:100%; border-collapse:collapse; margin:6px 0 4px; font-size:14px; }
+  table.tab th { background:var(--navy); color:#fff; padding:7px; text-align:center; }
+  table.tab td { padding:6px 8px; text-align:center; border:1px solid #dde3ec; }
+  table.tab tr:nth-child(even) td { background:#f2f5fa; }
+  .fonte { font-size:11px; color:#6b7a8c; font-style:italic; text-align:right; margin:4px 0 10px; }
+  .aviso { border-radius:6px; padding:10px 14px; margin-bottom:12px; font-size:14px; }
+  .aviso.info { background:#e1f1fb; color:#0b4a7a; } .aviso.warn { background:#fff3cd; color:#7a5b00; }
+  .aviso.ok { background:#dff5e8; color:#0b6b3a; } .aviso.erro { background:#fde2e3; color:#9b1c24; }
+  .centro { text-align:center; padding:40px 10px; color:var(--navy); }
+  footer { text-align:center; font-size:12px; color:#6b7a8c; padding:10px 10px 30px; }
+  @media print {
+    .barra-topo, nav.abas, .nao-imprimir { display:none !important; }
+    section.aba { display:block !important; break-inside:avoid; }
+    .bloco { box-shadow:none; border:1px solid #ddd; break-inside:avoid; }
+    body { background:#fff; }
+  }
+  @media (max-width:640px) { header .titulo { font-size:22px; } .kpi .v { font-size:22px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="titulo">Boletim do Trabalho</div>
+  <div class="sub" id="subtitulo">Novo CAGED · Município do Rio de Janeiro</div>
+</header>
+
+<div class="barra-topo">
+  <div><label for="ano">Ano</label><select id="ano"></select></div>
+  <div><label for="mes">Mês</label><select id="mes"></select></div>
+  <div class="esp"></div>
+  <button class="btn nao-imprimir" id="imprimir" type="button">Imprimir / salvar em PDF</button>
+</div>
+
+<main>
+  <div id="status" class="centro">Carregando os dados...</div>
+  <div id="conteudo" hidden>
+    <nav class="abas" id="abas"></nav>
+    <section class="aba" id="aba-visao"></section>
+    <section class="aba" id="aba-setor"></section>
+    <section class="aba" id="aba-sal"></section>
+    <section class="aba" id="aba-perfil"></section>
+    <section class="aba" id="aba-esc"></section>
+    <section class="aba" id="aba-idade"></section>
+    <section class="aba" id="aba-met"></section>
+  </div>
+</main>
+<footer>Elaboração: Observatório do Trabalho Carioca · Fonte: Novo CAGED/MTE (dados públicos) · Gerado pelo Rio Dashboard</footer>
+
+<script src="plotly.min.js"></script>
+<script>
+"use strict";
+const COR = { adm:"#00C26A", des:"#FF5A5F", saldo:"#0B4A7A", navy:"#14365D", def:"#4C7DF0" };
+const MES_NOME = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+const MES_ABR = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+const SETORES = ["Agropecuária","Indústria","Construção","Comércio","Serviços"];
+const CATEGORIAS = [
+ ["Agropecuária","A","São fazendas responsáveis por plantações e criação de animais ou rebanhos.","Plantações de soja, arroz e milho ou criação de animais como galinha, porco, vaca e ovelhas."],
+ ["Indústria","B, C, D, E","São fábricas responsáveis pela transformação de matéria-prima em produtos comercializáveis.","A madeira da árvore para mobília, o metal das minas para ferramentas, a lã da ovelha para as roupas."],
+ ["Construção","F","Responsável por construção de imóveis através dos recursos produzidos pela indústria, extraídos pelo extrativismo mineral ou plantação de árvores.","Os imóveis podem ser casas, prédios, hospitais, escolas e etc."],
+ ["Comércio","G","Responsável pela compra ou venda de produzidos por fábricas ou produtos vindo de terceiro.","Pode ser tanto uma matéria vinda de uma fábrica ou um produto produzido por um trabalhador autônomo."],
+ ["Serviços","H a U","É qualquer tipo de prática que gere uma renda baseada em atividades sociais que não se limita a troca ou posse de bens físicos.","Ensinar, Atender, Cuidar, Explicar, Cozinhar, Arrumar, Limpar, etc."]
+];
+const ABAS = [["visao","Visão geral"],["setor","Por setor"],["sal","Salários"],["perfil","Perfil demográfico"],["esc","Escolaridade"],["idade","Idade"],["met","Metodologia"]];
+
+const DADOS = {};            // "202609" -> objeto do mês
+const pendentes = {};        // gráficos ainda não desenhados, por aba
+let atual = null, abaAtual = "visao";
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const fmtInt = n => (n === null || n === undefined) ? "-" : Math.round(n).toLocaleString("pt-BR");
+const fmtRs = n => (n === null || n === undefined || Number.isNaN(n)) ? "-" :
+  "R$ " + Number(n).toLocaleString("pt-BR", { minimumFractionDigits:2, maximumFractionDigits:2 });
+const comp = (a, m) => `${a}${String(m).padStart(2, "0")}`;
+
+/* ---------- carregamento dos arquivos AAAAMM.json ---------- */
+async function carregar() {
+  const hoje = new Date(), fim = hoje.getFullYear() * 12 + hoje.getMonth();
+  const lista = [];
+  for (let k = 2020 * 12; k <= fim; k++) lista.push([Math.floor(k / 12), k % 12 + 1]);
+  let i = 0;
+  async function trabalhador() {
+    while (i < lista.length) {
+      const [a, m] = lista[i++];
+      try {
+        const r = await fetch(`dados/${comp(a, m)}.json`, { cache: "no-cache" });
+        if (r.ok) DADOS[comp(a, m)] = await r.json();
+      } catch (e) { /* mês sem arquivo: ignora */ }
+    }
+  }
+  await Promise.all(Array.from({ length: 10 }, trabalhador));
+}
+
+function montarSeletores() {
+  const chaves = Object.keys(DADOS).sort();
+  const anos = [...new Set(chaves.map(c => c.slice(0, 4)))];
+  const selA = document.getElementById("ano");
+  selA.innerHTML = anos.map(a => `<option value="${a}">${a}</option>`).join("");
+  const ultimo = chaves[chaves.length - 1];
+  selA.value = ultimo.slice(0, 4);
+  atualizarMeses(ultimo.slice(4));
+}
+function atualizarMeses(preferido) {
+  const a = document.getElementById("ano").value;
+  const meses = Object.keys(DADOS).filter(c => c.startsWith(a)).map(c => c.slice(4)).sort();
+  const selM = document.getElementById("mes");
+  selM.innerHTML = meses.map(m => `<option value="${m}">${MES_NOME[+m - 1]}</option>`).join("");
+  selM.value = meses.includes(preferido) ? preferido : meses[meses.length - 1];
+}
+
+/* ---------- componentes ---------- */
+function tabela(cabecalho, linhas) {
+  return `<table class="tab"><thead><tr>${cabecalho.map(c => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
+    linhas.map(l => `<tr>${l.map(v => `<td>${esc(v)}</td>`).join("")}</tr>`).join("") + `</tbody></table>`;
+}
+const tabMov = (rows, chave, rot) => tabela([rot, "Admissões", "Desligamentos", "Saldo"],
+  rows.map(r => [r[chave], fmtInt(r.Admitidos), fmtInt(r.Desligados), fmtInt(r.Saldo)]));
+const tabSal = (rows, chave, rot, n1 = "Média salarial", n2 = "Mediana salarial") => tabela([rot, n1, n2],
+  rows.map(r => [r[chave] === "Intelectual" && rot.startsWith("Tipo") ? "Intelectual (Mental)" : r[chave], fmtRs(r.Media), fmtRs(r.Mediana)]));
+
+let contador = 0;
+function grafico(aba, fn, altura) {           // devolve o HTML do contêiner e agenda o desenho
+  const id = `g${++contador}`;
+  (pendentes[aba] = pendentes[aba] || []).push([id, fn]);
+  return `<div class="grafico" id="${id}" style="height:${altura}px"></div>`;
+}
+function desenharPendentes(aba) {
+  (pendentes[aba] || []).forEach(([id, fn]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const [dados, layout] = fn();
+    Plotly.newPlot(el, dados, layout, { responsive:true, displaylogo:false });
+  });
+  pendentes[aba] = [];
+}
+const tituloLayout = t => ({ text:t, x:0.5, xanchor:"center", font:{ size:14, color:COR.navy } });
+
+function barrasGrupo(rows, chave, titulo, horizontal) {
+  const cats = rows.map(r => r[chave]);
+  const serie = (nome, cor) => {
+    const v = rows.map(r => r[nome]), txt = v.map(fmtInt);
+    return horizontal
+      ? { type:"bar", orientation:"h", name:nome, x:v, y:cats, marker:{ color:cor }, text:txt, textposition:"outside", cliponaxis:false }
+      : { type:"bar", name:nome, x:cats, y:v, marker:{ color:cor }, text:txt, textposition:"outside", cliponaxis:false };
+  };
+  const dados = [serie("Admitidos", COR.adm), serie("Desligados", COR.des), serie("Saldo", COR.saldo)];
+  const layout = { title:tituloLayout(titulo), barmode:"group", separators:",.", template:"plotly_white",
+    legend:{ orientation:"h", x:0.5, xanchor:"center", y:1.08 }, margin:{ t:70, r:60 } };
+  if (horizontal) { layout.xaxis = { tickformat:",d" }; layout.yaxis = { autorange:"reversed", automargin:true, categoryorder:"array", categoryarray:cats }; }
+  else { layout.xaxis = { categoryorder:"array", categoryarray:cats }; layout.yaxis = { tickformat:",d" }; }
+  return [dados, layout];
+}
+function barrasHist(pontos, mes, titulo) {
+  const x = pontos.map(p => `${MES_ABR[mes - 1]} ${p.ano}`), y = pontos.map(p => p.saldo);
+  const dados = [{ type:"bar", x, y, marker:{ color:y.map(v => v >= 0 ? COR.adm : COR.des) }, text:y.map(fmtInt), textposition:"outside", cliponaxis:false }];
+  return [dados, { title:tituloLayout(titulo), separators:",.", showlegend:false, template:"plotly_white", margin:{ t:60 },
+    xaxis:{ type:"category" }, yaxis:{ tickformat:",d" } }];
+}
+function barrasDef(rows, titulo) {
+  const cats = rows.map(r => r.def_nome);
+  return [[{ type:"bar", orientation:"h", x:rows.map(r => r.Admitidos), y:cats, marker:{ color:COR.def },
+             text:rows.map(r => fmtInt(r.Admitidos)), textposition:"outside", cliponaxis:false }],
+    { title:tituloLayout(titulo), separators:",.", showlegend:false, template:"plotly_white", margin:{ t:60, r:60 },
+      xaxis:{ tickformat:",d" }, yaxis:{ autorange:"reversed", automargin:true, categoryorder:"array", categoryarray:cats } }];
+}
+const bloco = (...p) => `<div class="bloco">${p.join("")}</div>`;
+const kpi = (t, v, cls = "") => `<div class="kpi ${cls}"><div class="t">${esc(t)}</div><div class="v">${esc(v)}</div></div>`;
+
+/* ---------- construção das abas ---------- */
+function avisoModelo(d) {
+  if (d.modelo !== "ajustes")
+    return `<div class="aviso info">Modelo sem ajustes: só o CAGEDMOV, sem as declarações fora do prazo nem as exclusões. Os números podem diferir do painel oficial do MTE.</div>`;
+  const c = d.corte ? `${String(d.corte % 100).padStart(2, "0")}/${Math.floor(d.corte / 100)}` : "-";
+  if (d.faltando && d.faltando.length)
+    return `<div class="aviso warn">Alguns arquivos FOR/EXC não estavam disponíveis, então os ajustes podem estar incompletos: ${esc(d.faltando.join(", "))}.</div>`;
+  return `<div class="aviso ok">Modelo oficial com ajustes (MOV + FOR - EXC), com arquivos publicados até ${c}. O saldo deste mês pode mudar quando o MTE publicar novos arquivos. Dados gerados em ${esc(d.gerado_em || "-")}.</div>`;
+}
+function notas(d) {
+  const aj = d.modelo === "ajustes";
+  const rot = aj ? `com ajustes (MOV + FOR - EXC)${d.corte ? `, arquivos até ${String(d.corte % 100).padStart(2, "0")}/${Math.floor(d.corte / 100)}` : ""}` : "sem ajustes (somente CAGEDMOV)";
+  const n = ["Admitido = movimentação com saldo +1; desligado = saldo -1; saldo = admitidos - desligados.",
+    "Município do Rio de Janeiro (código IBGE 330455).",
+    "Setores pela seção CNAE: Agropecuária (A), Indústria (B a E), Construção (F), Comércio (G) e Serviços (H a U).",
+    "Salário médio e mediano: somente admitidos com salário informado maior que zero."];
+  if (aj) n.push("No modelo com ajustes, os salários usam MOV e FOR; as exclusões não são descontadas dos salários.");
+  n.push("Escolaridade: Fundamental Incompleto = até o 9º ano incompleto; Superior Completo inclui mestrado, doutorado e pós-graduação.");
+  n.push(`Modelo de cálculo: Novo CAGED ${rot}.`);
+  if (aj) n.push("Saldo = CAGEDMOV + CAGEDFOR - CAGEDEXC; o resultado pode mudar quando o MTE publica novos arquivos.");
+  n.push("Comparativo por setor: o mesmo mês de cada ano em que há dados neste site.");
+  return n;
+}
+
+function render() {
+  const a = document.getElementById("ano").value, m = document.getElementById("mes").value;
+  const d = DADOS[`${a}${m}`];
+  if (!d) return;
+  atual = d;
+  Object.keys(pendentes).forEach(k => pendentes[k] = []);
+  const per = `${MES_ABR[d.mes - 1]}/${d.ano}`;
+  const rod = `<p class="fonte">Elaboração: Observatório do Trabalho Carioca · Fonte: Novo CAGED/MTE</p>`;
+  document.getElementById("subtitulo").textContent = `${MES_NOME[d.mes - 1]} de ${d.ano} · Município do Rio de Janeiro`;
+
+  const g1 = d.setor.concat([d.total]).map(r => ({ cat:r.Setor, Admitidos:r.Admitidos, Desligados:r.Desligados, Saldo:r.Saldo }));
+  const obs = d.nao_ident > 0 ? `<p class="fonte">Obs.: ${fmtInt(d.nao_ident)} movimentações sem seção CNAE identificada entram no Total, mas não em nenhum setor.</p>` : "";
+  document.getElementById("aba-visao").innerHTML = avisoModelo(d) +
+    `<div class="kpis">${kpi("Admitidos", fmtInt(d.total.Admitidos), "pos")}${kpi("Desligados", fmtInt(d.total.Desligados), "neg")}` +
+    `${kpi("Saldo", fmtInt(d.total.Saldo), d.total.Saldo >= 0 ? "pos" : "neg")}${kpi("Salário médio (admitidos)", fmtRs(d.sal_geral.Media))}` +
+    `${kpi("Salário mediano (admitidos)", fmtRs(d.sal_geral.Mediana))}</div>` +
+    bloco(grafico("visao", () => barrasGrupo(g1, "cat", `Gráfico 1 - Saldo total de empregos formais (${per})`, false), 460), rod, obs);
+
+  // comparativo por setor: mesmo mês nos outros anos disponíveis
+  const anos = Object.keys(DADOS).filter(c => c.slice(4) === m).map(c => +c.slice(0, 4)).sort();
+  const gt = ["Gráfico 2 - Comparativo do setor agropecuário","Gráfico 3 - Comparativo do setor industrial","Gráfico 4 - Comparativo do setor de construção civil","Gráfico 5 - Comparativo do setor comercial","Gráfico 6 - Comparativo do setor de serviços"];
+  const ht = ["2.1 Setor agropecuário","2.2 Setor industrial","2.3 Setor de construção civil","2.4 Setor comercial","2.5 Setor de serviços"];
+  const aviso_h = anos.length < 2
+    ? `<div class="aviso warn">Só há dados de ${anos.length} ano para este mês, então não há o que comparar. Envie os outros anos para a pasta <b>dados</b>.</div>` : "";
+  document.getElementById("aba-setor").innerHTML = aviso_h + SETORES.map((s, k) => {
+    const pontos = anos.map(an => ({ ano:an, saldo:DADOS[comp(an, d.mes)].setor.find(r => r.Setor === s).Saldo }));
+    return bloco(`<h4>${ht[k]}</h4>`, grafico("setor", () => barrasHist(pontos, d.mes, gt[k]), 360), rod);
+  }).join("");
+
+  document.getElementById("aba-sal").innerHTML = bloco(`<h4>3. Salários - perfil dos admitidos</h4>`,
+    `<b>Tabela 2 - Indicadores salariais (admitidos ${per})</b>`,
+    tabela(["Indicador","Valor"], [["Salário Médio", fmtRs(d.sal_geral.Media)], ["Salário Mediano", fmtRs(d.sal_geral.Mediana)]]), rod);
+
+  document.getElementById("aba-perfil").innerHTML =
+    bloco(`<h4>4. Perfil demográfico</h4>`, `<b>Tabela 3 - Admissões por gênero (${per})</b>`, tabMov(d.sexo, "sexo_nome", "Gênero"), rod,
+          `<b>Tabela 4 - Salário por gênero (${per})</b>`, tabSal(d.sal_sexo, "sexo_nome", "Gênero"), rod) +
+    bloco(`<b>Tabela 5 - Admissões, Desligamentos e Saldo por raça/cor (${per})</b>`, tabMov(d.raca, "raca_nome", "Raça"), rod,
+          `<b>Tabela 6 - Média, Mediana de Salário por raça/cor (${per})</b>`, tabSal(d.sal_raca, "raca_nome", "Raça", "Média", "Mediana"), rod) +
+    bloco(grafico("perfil", () => barrasDef(d.deficiencia, `Gráfico 7 - Admissões de pessoas com deficiência (${per})`), 380), rod,
+          `<b>Tabela 7 - Média, Mediana de Salário por deficiência (${per})</b>`, tabSal(d.sal_def, "def_nome", "Tipo de deficiência"), rod);
+
+  document.getElementById("aba-esc").innerHTML = bloco(`<h4>5. Escolaridade dos admitidos</h4>`,
+    grafico("esc", () => barrasGrupo(d.escolaridade, "esc", `Gráfico 8 - Escolaridade dos admitidos (${per})`, true), 560), rod);
+  document.getElementById("aba-idade").innerHTML = bloco(`<h4>6. Idade dos admitidos</h4>`,
+    grafico("idade", () => barrasGrupo(d.idade, "faixa", `Gráfico 9 - Idade dos admitidos (${per})`, true), 560), rod);
+  document.getElementById("aba-met").innerHTML = bloco(`<h4>Categorias do CAGED (Tabela 1)</h4>`,
+    tabela(["Categoria","Seções CNAE","Descrição","Exemplos"], CATEGORIAS),
+    `<h4>Como os números são calculados</h4><ul>${notas(d).map(n => `<li>${esc(n)}</li>`).join("")}</ul>`);
+
+  mostrarAba(abaAtual);
+}
+
+function mostrarAba(id) {
+  abaAtual = id;
+  document.querySelectorAll("section.aba").forEach(s => s.classList.toggle("ativa", s.id === `aba-${id}`));
+  document.querySelectorAll("#abas button").forEach(b => b.classList.toggle("ativa", b.dataset.aba === id));
+  desenharPendentes(id);
+  window.dispatchEvent(new Event("resize"));
+}
+
+/* ---------- inicialização ---------- */
+window.addEventListener("beforeprint", () => {
+  document.querySelectorAll("section.aba").forEach(s => s.classList.add("ativa"));
+  ABAS.forEach(([id]) => desenharPendentes(id));
+  document.querySelectorAll(".grafico").forEach(el => { try { Plotly.Plots.resize(el); } catch (e) {} });
+});
+window.addEventListener("afterprint", () => mostrarAba(abaAtual));
+
+(async function iniciar() {
+  document.getElementById("abas").innerHTML = ABAS.map(([id, nome]) => `<button type="button" data-aba="${id}">${nome}</button>`).join("");
+  document.getElementById("abas").addEventListener("click", e => { if (e.target.dataset.aba) mostrarAba(e.target.dataset.aba); });
+  document.getElementById("ano").addEventListener("change", () => { atualizarMeses(document.getElementById("mes").value); render(); });
+  document.getElementById("mes").addEventListener("change", render);
+  document.getElementById("imprimir").addEventListener("click", () => window.print());
+  await carregar();
+  const st = document.getElementById("status");
+  if (!Object.keys(DADOS).length) {
+    st.className = "aviso warn";
+    st.innerHTML = "Nenhum dado encontrado. Coloque os arquivos <b>AAAAMM.json</b> (gerados pelo Rio Dashboard) na pasta <b>dados</b> do site.";
+    return;
+  }
+  st.hidden = true;
+  document.getElementById("conteudo").hidden = false;
+  montarSeletores();
+  render();
+})();
+</script>
+</body>
+</html>
