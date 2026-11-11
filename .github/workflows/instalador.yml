@@ -8,13 +8,15 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: rio_dashboard
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-          cache: pip
 
       - name: Instalar dependências
         run: |
@@ -42,5 +44,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Rio-Dashboard-Instalador
-          path: saida/Rio-Dashboard-Instalador.exe
+          path: rio_dashboard/saida/Rio-Dashboard-Instalador.exe
           if-no-files-found: error
