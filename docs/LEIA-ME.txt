@@ -1,0 +1,1 @@
+Essa é a área responsável de guardar informações do site.
