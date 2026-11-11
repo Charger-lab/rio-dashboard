@@ -1,0 +1,46 @@
+name: Gerar instalador do Rio Dashboard (Windows)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Empacotar com PyInstaller
+        run: >
+          pyinstaller --noconfirm --clean --onedir --console
+          --name RioDashboard --icon assets/icone.ico
+          --collect-all dash --collect-all plotly --collect-all py7zr
+          --collect-data matplotlib
+          --hidden-import rio_dashboard.app
+          run.py
+
+      - name: Autoteste do executável (PDF, gráficos e leitura de 7z)
+        run: dist\RioDashboard\RioDashboard.exe --autoteste
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Gerar o instalador
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" instalador\RioDashboard.iss'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rio-Dashboard-Instalador
+          path: saida/Rio-Dashboard-Instalador.exe
+          if-no-files-found: error
