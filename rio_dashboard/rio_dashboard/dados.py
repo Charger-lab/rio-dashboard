@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ftplib
+import io
 import os
 import shutil
 import subprocess
@@ -101,30 +102,154 @@ def _normaliza(nome: str) -> str:
     return "".join(c for c in s if not unicodedata.combining(c))
 
 
+class _FiltroRio:
+    """Lê o arquivo do CAGED como fluxo de bytes e guarda só as linhas que contêm o código do Rio.
+
+    É muito mais rápido que interpretar milhões de linhas: a busca é feita em bytes, em C, e só as
+    linhas candidatas (poucas) são interpretadas depois. O filtro final exato é feito em ler_df().
+    """
+    PADRAO = f";{COD_MUN_RIO};".encode()
+
+    def __init__(self):
+        self.resto = b""
+        self.cab: bytes | None = None
+        self.linhas: list[bytes] = []
+        self.total = 0
+
+    def alimentar(self, dados: bytes) -> None:
+        self.total += len(dados)
+        buf = self.resto + bytes(dados)
+        corte = buf.rfind(b"\n")
+        if corte < 0:
+            self.resto = buf
+            return
+        bloco, self.resto = buf[:corte], buf[corte + 1:]
+        if self.cab is None:
+            k = bloco.find(b"\n")
+            self.cab, bloco = (bloco, b"") if k < 0 else (bloco[:k], bloco[k + 1:])
+        pos = 0
+        achar, pad = bloco.find, self.PADRAO
+        while True:
+            i = achar(pad, pos)
+            if i < 0:
+                break
+            ini = bloco.rfind(b"\n", 0, i) + 1
+            fim = achar(b"\n", i)
+            if fim < 0:
+                fim = len(bloco)
+            self.linhas.append(bloco[ini:fim])
+            pos = fim
+
+    def encerrar(self) -> None:
+        if self.resto:
+            resto, self.resto = self.resto, b""
+            self.alimentar(resto + b"\n")
+
+    def ler_df(self, encoding: str) -> pd.DataFrame:
+        if self.cab is None:
+            raise ErroCaged("O arquivo está vazio ou não tem o formato esperado do CAGED.")
+        cab = pd.read_csv(io.BytesIO(self.cab + b"\n"), sep=";", encoding=encoding, dtype=str, nrows=0)
+        std = [_normaliza(c) for c in cab.columns]
+        faltam = [c for c in COLS_NECESSARIAS if c not in std]
+        if faltam:
+            raise ErroCaged("Colunas não encontradas no arquivo: " + ", ".join(faltam) +
+                            ". Se os acentos estiverem errados, tente a codificação 'Latin-1'.")
+        idx = [i for i, c in enumerate(std) if c in COLS_NECESSARIAS]
+        nomes = [std[i] for i in sorted(idx)]
+        if self.linhas:
+            bruto = self.cab + b"\n" + b"\n".join(self.linhas) + b"\n"
+            d = pd.read_csv(io.BytesIO(bruto), sep=";", encoding=encoding, dtype=str, usecols=idx, header=0)
+            d.columns = nomes                                  # usecols mantém a ordem do arquivo
+        else:
+            d = pd.DataFrame(columns=nomes)
+        d["municipio"] = pd.to_numeric(d["municipio"], errors="coerce")
+        d = d[d["municipio"] == COD_MUN_RIO]                  # filtro exato (a busca em bytes é só um pré-filtro)
+        for c in ("competenciamov", "saldomovimentacao", "idade", "graudeinstrucao", "racacor", "sexo",
+                  "tipodedeficiencia"):
+            d[c] = pd.to_numeric(d[c], errors="coerce")
+        d["salario"] = pd.to_numeric(d["salario"].astype(str).str.replace(",", ".", regex=False), errors="coerce")
+        d["competenciamov"] = d["competenciamov"].astype("Int64")
+        return d.reset_index(drop=True)
+
+
 def ler_rio(txt: Path, encoding: str = "UTF-8") -> pd.DataFrame:
-    cab = pd.read_csv(txt, sep=";", nrows=0, encoding=encoding, dtype=str)
-    std = [_normaliza(c) for c in cab.columns]
-    faltam = [c for c in COLS_NECESSARIAS if c not in std]
-    if faltam:
-        raise ErroCaged("Colunas não encontradas no arquivo: " + ", ".join(faltam) +
-                        ". Se os acentos estiverem errados, tente a codificação 'Latin-1'.")
-    idx = [i for i, c in enumerate(std) if c in COLS_NECESSARIAS]
-    nomes = [std[i] for i in idx]
-    partes = []
-    for ch in pd.read_csv(txt, sep=";", encoding=encoding, dtype=str, usecols=idx,
-                          chunksize=400_000, header=0):
-        ch.columns = [std[i] for i in sorted(idx)]            # usecols mantém a ordem do arquivo
-        mun = pd.to_numeric(ch["municipio"], errors="coerce")
-        sel = ch[mun == COD_MUN_RIO]
-        if len(sel):
-            partes.append(sel)
-    d = pd.concat(partes, ignore_index=True) if partes else pd.DataFrame(columns=sorted(nomes, key=std.index))
-    for c in ("competenciamov", "saldomovimentacao", "idade", "graudeinstrucao", "racacor", "sexo",
-              "tipodedeficiencia", "municipio"):
-        d[c] = pd.to_numeric(d[c], errors="coerce")
-    d["salario"] = pd.to_numeric(d["salario"].astype(str).str.replace(",", ".", regex=False), errors="coerce")
-    d["competenciamov"] = d["competenciamov"].astype("Int64")
-    return d.reset_index(drop=True)
+    """Lê um .txt do CAGED já descompactado e devolve só o Rio de Janeiro."""
+    f = _FiltroRio()
+    with open(txt, "rb") as fh:
+        while True:
+            bloco = fh.read(16 << 20)
+            if not bloco:
+                break
+            f.alimentar(bloco)
+    f.encerrar()
+    return f.ler_df(encoding)
+
+
+def ler_rio_7z(arquivo: Path, encoding: str = "UTF-8") -> pd.DataFrame:
+    """Lê o .7z direto, descompactando em fluxo (sem gravar o .txt gigante no disco)."""
+    f = _FiltroRio()
+    erro_py7zr = None
+    try:
+        import py7zr
+        from py7zr.io import Py7zIO, WriterFactory
+
+        class Escritor(Py7zIO):
+            def __init__(self, alvo):
+                self.alvo, self.n = alvo, 0
+
+            def write(self, s):
+                if self.alvo is not None:
+                    self.alvo.alimentar(s)
+                self.n += len(s)
+                return len(s)
+
+            def read(self, size=None):
+                return b""
+
+            def seek(self, offset, whence=0):
+                return 0
+
+            def flush(self):
+                pass
+
+            def size(self):
+                return self.n
+
+        class Fabrica(WriterFactory):
+            def __init__(self):
+                self.usado = False
+
+            def create(self, filename):
+                alvo = None
+                if not self.usado and filename.lower().endswith(".txt"):
+                    self.usado, alvo = True, f
+                return Escritor(alvo)
+
+        with py7zr.SevenZipFile(arquivo, "r") as z:
+            z.extractall(factory=Fabrica())
+        if f.total == 0:
+            raise ErroCaged("O .7z não contém um arquivo .txt.")
+    except ErroCaged:
+        raise
+    except Exception as e:  # noqa: BLE001
+        erro_py7zr = e
+        f = _FiltroRio()
+        sete = shutil.which("7z") or shutil.which("7za") or shutil.which("7zr")
+        if not sete:
+            raise ErroCaged(f"Não consegui descompactar {arquivo.name} ({e}). O arquivo pode estar incompleto; "
+                            "apague-o e tente de novo.") from e
+        proc = subprocess.Popen([sete, "x", "-so", str(arquivo)], stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL)
+        while True:
+            bloco = proc.stdout.read(16 << 20)
+            if not bloco:
+                break
+            f.alimentar(bloco)
+        if proc.wait() != 0 or f.total == 0:
+            raise ErroCaged(f"Não consegui descompactar {arquivo.name}. O arquivo pode estar incompleto; "
+                            "apague-o e tente de novo.") from erro_py7zr
+    f.encerrar()
+    return f.ler_df(encoding)
 
 
 # ------------------------------------------------------------------ um arquivo -> linhas do Rio (cache)
@@ -166,14 +291,8 @@ def rio_do_arquivo(fonte: Fonte, tipo: str, ano: int, mes: int, pasta: Path, enc
         return pd.read_pickle(cache)
     pasta.mkdir(parents=True, exist_ok=True)
     arq, baixado = obter_7z(fonte, tipo, ano, mes, pasta, log)
-    tmp = pasta / f"_extraindo_{tipo}{comp_str(ano, mes)}"
-    try:
-        log(f"[{comp_str(ano, mes)}] Descompactando...")
-        txt = extrair_7z(arq, tmp)
-        log(f"[{tipo} {comp_str(ano, mes)}] Lendo e filtrando o Rio de Janeiro...")
-        rio = ler_rio(txt, encoding)
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)          # o .txt (centenas de MB) nunca fica no disco
+    log(f"[{tipo} {comp_str(ano, mes)}] Lendo e filtrando o Rio de Janeiro...")
+    rio = ler_rio_7z(arq, encoding)
     rio.to_pickle(cache)                                # poucos MB
     if apagar and baixado:
         arq.unlink(missing_ok=True)
@@ -318,6 +437,16 @@ def arquivos_pesados(pasta: str | Path) -> list[Path]:
     if not p.is_dir():
         return []
     rx = re.compile(r"^CAGED(MOV|FOR|EXC)\d{6}(\.7z|\.7z\.part)$", re.I)
+    return sorted(f for f in p.iterdir() if f.is_file() and rx.match(f.name))
+
+
+def arquivos_cache(pasta: str | Path) -> list[Path]:
+    """Arquivos de cache leve (só as linhas do Rio) na pasta de trabalho."""
+    import re
+    p = Path(pasta)
+    if not p.is_dir():
+        return []
+    rx = re.compile(r"^rio_v\d+_CAGED(MOV|FOR|EXC)\d{6}\.pkl\.gz$", re.I)
     return sorted(f for f in p.iterdir() if f.is_file() and rx.match(f.name))
 
 

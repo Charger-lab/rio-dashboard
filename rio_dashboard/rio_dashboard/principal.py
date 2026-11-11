@@ -51,6 +51,9 @@ def autoteste() -> int:
         txt = extrair_7z(t / "CAGEDMOV202609.7z", t / "saida")
         lido = ler_rio(txt)
         assert len(lido) == n, f"leitura do 7z devolveu {len(lido)} linhas (esperado {n})"
+        from .dados import ler_rio_7z
+        lido2 = ler_rio_7z(t / "CAGEDMOV202609.7z")          # leitura em fluxo, como no uso real
+        assert len(lido2) == n, f"leitura em fluxo devolveu {len(lido2)} linhas (esperado {n})"
     assert pdf[:4] == b"%PDF", "PDF inválido"
     print(f"AUTOTESTE OK (pdf {len(pdf)} bytes)")
     return 0
